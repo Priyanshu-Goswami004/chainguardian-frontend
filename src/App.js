@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { AlertTriangle, Shield, Activity, TrendingUp, Database, Cpu, Check, X, Bell, RefreshCw } from 'lucide-react';
-
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { AlertTriangle, Shield, Activity, TrendingUp, Database, Bell, RefreshCw, Check, X } from 'lucide-react';
 import './App.css';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
@@ -19,39 +18,29 @@ function App() {
   });
   const [selectedTab, setSelectedTab] = useState('dashboard');
   const [loading, setLoading] = useState(false);
-
-  const fraudTrendData = [
-    { month: 'Jan', normal: 850, fraud: 45 },
-    { month: 'Feb', normal: 920, fraud: 38 },
-    { month: 'Mar', normal: 880, fraud: 52 },
-    { month: 'Apr', normal: 950, fraud: 41 },
-    { month: 'May', normal: 1020, fraud: 35 },
-    { month: 'Jun', normal: 980, fraud: 48 }
-  ];
-
-  const riskDistribution = [
-    { name: 'Low Risk', value: 78, color: '#10b981' },
-    { name: 'Medium Risk', value: 15, color: '#f59e0b' },
-    { name: 'High Risk', value: 7, color: '#ef4444' }
-  ];
+  const [fraudTrendData, setFraudTrendData] = useState([]);
+  const [riskDistribution, setRiskDistribution] = useState([]);
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 30000);
+    const interval = setInterval(loadData, 5000);
     return () => clearInterval(interval);
   }, []);
 
   const loadData = async () => {
     try {
       const [txsRes, alertsRes, statsRes] = await Promise.all([
-        fetch(`${API_URL}/api/txs?limit=20`),
+        fetch(`${API_URL}/api/txs?limit=50`),
         fetch(`${API_URL}/api/alerts?limit=20`),
         fetch(`${API_URL}/api/stats`)
       ]);
 
       if (txsRes.ok) {
         const txsData = await txsRes.json();
-        setTransactions(txsData.transactions || []);
+        const txs = txsData.transactions || [];
+        setTransactions(txs);
+        calculateFraudTrend(txs);
+        calculateRiskDistribution(txs);
       }
 
       if (alertsRes.ok) {
@@ -66,6 +55,89 @@ function App() {
     } catch (error) {
       console.error('Error loading data:', error);
     }
+  };
+
+  // IMPROVED: Better fraud trend calculation
+  const calculateFraudTrend = (txs) => {
+    if (!txs || txs.length === 0) {
+      setFraudTrendData([
+        { name: 'No Data', normal: 0, fraud: 0 }
+      ]);
+      return;
+    }
+
+    // If less than 6 transactions, show each individually
+    if (txs.length < 6) {
+      const trendData = txs.reverse().map((tx, index) => ({
+        name: `Tx ${index + 1}`,
+        normal: (tx.label === 'normal' || !tx.isSuspicious) ? 1 : 0,
+        fraud: (tx.label === 'suspicious' || tx.label === 'fraud' || tx.isSuspicious) ? 1 : 0
+      }));
+      setFraudTrendData(trendData);
+      return;
+    }
+
+    // For 6+ transactions, group into 6 buckets
+    const bucketSize = Math.ceil(txs.length / 6);
+    const buckets = [];
+    
+    for (let i = 0; i < 6; i++) {
+      const start = i * bucketSize;
+      const end = Math.min(start + bucketSize, txs.length);
+      const bucketTxs = txs.slice(start, end);
+      
+      let normalCount = 0;
+      let fraudCount = 0;
+      
+      bucketTxs.forEach(tx => {
+        if (tx.label === 'suspicious' || tx.label === 'fraud' || tx.isSuspicious === true) {
+          fraudCount++;
+        } else {
+          normalCount++;
+        }
+      });
+      
+      buckets.push({
+        name: i === 0 ? 'Latest' : i === 5 ? 'Oldest' : `Grp ${i + 1}`,
+        normal: normalCount,
+        fraud: fraudCount
+      });
+    }
+    
+    // Reverse to show oldest to newest (left to right)
+    setFraudTrendData(buckets.reverse());
+  };
+
+  // IMPROVED: Risk distribution
+  const calculateRiskDistribution = (txs) => {
+    if (!txs || txs.length === 0) {
+      setRiskDistribution([
+        { name: 'Low Risk', value: 100, color: '#10b981' },
+        { name: 'Medium Risk', value: 0, color: '#f59e0b' },
+        { name: 'High Risk', value: 0, color: '#ef4444' }
+      ]);
+      return;
+    }
+
+    let lowRisk = 0, mediumRisk = 0, highRisk = 0;
+
+    txs.forEach(tx => {
+      const risk = parseFloat(tx.riskScore) || 0;
+      if (risk < 0.4) {
+        lowRisk++;
+      } else if (risk < 0.7) {
+        mediumRisk++;
+      } else {
+        highRisk++;
+      }
+    });
+
+    const total = txs.length;
+    setRiskDistribution([
+      { name: 'Low Risk', value: Math.round((lowRisk / total) * 100), color: '#10b981' },
+      { name: 'Medium Risk', value: Math.round((mediumRisk / total) * 100), color: '#f59e0b' },
+      { name: 'High Risk', value: Math.round((highRisk / total) * 100), color: '#ef4444' }
+    ]);
   };
 
   const connectWallet = async () => {
@@ -99,7 +171,6 @@ function App() {
 
   return (
     <div className="app">
-      {/* Header */}
       <header className="header">
         <div className="header-content">
           <div className="header-left">
@@ -124,7 +195,6 @@ function App() {
         </div>
       </header>
 
-      {/* Navigation */}
       <nav className="nav-tabs">
         <div className="nav-content">
           {['dashboard', 'transactions', 'alerts'].map(tab => (
@@ -139,7 +209,6 @@ function App() {
         </div>
       </nav>
 
-      {/* Main Content */}
       <main className="main-content">
         {selectedTab === 'dashboard' && (
           <div className="dashboard">
@@ -183,24 +252,63 @@ function App() {
               </div>
             </div>
 
-            {/* Charts */}
+            {/* Charts - IMPROVED */}
             <div className="charts-grid">
               <div className="card">
                 <div className="card-header">
                   <TrendingUp size={20} />
                   <h3>Fraud Detection Trends</h3>
+                  <span className="chart-info">{transactions.length} transactions</span>
                 </div>
-                <ResponsiveContainer width="100%" height={250}>
-                  <LineChart data={fraudTrendData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-                    <XAxis dataKey="month" stroke="#999" />
-                    <YAxis stroke="#999" />
-                    <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #666' }} />
-                    <Legend />
-                    <Line type="monotone" dataKey="normal" stroke="#10b981" strokeWidth={2} />
-                    <Line type="monotone" dataKey="fraud" stroke="#ef4444" strokeWidth={2} />
-                  </LineChart>
-                </ResponsiveContainer>
+                {fraudTrendData.length === 0 || fraudTrendData[0].name === 'No Data' ? (
+                  <div className="empty-state">
+                    <Activity size={48} style={{ opacity: 0.3 }} />
+                    <p>No transaction data yet</p>
+                    <p className="text-sm">Send some transactions to see trends</p>
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <LineChart data={fraudTrendData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                      <XAxis 
+                        dataKey="name" 
+                        stroke="#999" 
+                        style={{ fontSize: '12px' }}
+                      />
+                      <YAxis 
+                        stroke="#999" 
+                        style={{ fontSize: '12px' }}
+                        allowDecimals={false}
+                      />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: '#1a1a1a', 
+                          border: '1px solid #666',
+                          borderRadius: '8px'
+                        }} 
+                      />
+                      <Legend />
+                      <Line 
+                        type="monotone" 
+                        dataKey="normal" 
+                        stroke="#10b981" 
+                        strokeWidth={3}
+                        name="Normal Transactions"
+                        dot={{ r: 4 }}
+                        activeDot={{ r: 6 }}
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="fraud" 
+                        stroke="#ef4444" 
+                        strokeWidth={3}
+                        name="Fraud Detected"
+                        dot={{ r: 4 }}
+                        activeDot={{ r: 6 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
               </div>
 
               <div className="card">
@@ -208,25 +316,38 @@ function App() {
                   <Database size={20} />
                   <h3>Risk Distribution</h3>
                 </div>
-                <ResponsiveContainer width="100%" height={250}>
-                  <PieChart>
-                    <Pie
-                      data={riskDistribution}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {riskDistribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #666' }} />
-                  </PieChart>
-                </ResponsiveContainer>
+                {riskDistribution.every(item => item.value === 0) ? (
+                  <div className="empty-state">
+                    <Database size={48} style={{ opacity: 0.3 }} />
+                    <p>No risk data yet</p>
+                    <p className="text-sm">System monitoring...</p>
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={riskDistribution}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, value }) => value > 0 ? `${name}: ${value}%` : null}
+                        outerRadius={80}
+                        dataKey="value"
+                      >
+                        {riskDistribution.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: '#1a1a1a', 
+                          border: '1px solid #666',
+                          borderRadius: '8px'
+                        }} 
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </div>
 
@@ -241,10 +362,14 @@ function App() {
               </div>
               <div className="alerts-list">
                 {alerts.length === 0 ? (
-                  <div className="empty-state">No alerts yet. System monitoring...</div>
+                  <div className="empty-state">
+                    <Bell size={48} style={{ opacity: 0.3 }} />
+                    <p>No alerts yet</p>
+                    <p className="text-sm">System monitoring...</p>
+                  </div>
                 ) : (
                   alerts.map(alert => (
-                    <div key={alert._id || alert.sigHash} className="alert-item">
+                    <div key={alert._id} className="alert-item">
                       <AlertTriangle className="text-danger" size={20} />
                       <div className="alert-details">
                         <h4>Suspicious Transaction Detected</h4>
@@ -290,7 +415,7 @@ function App() {
                     </tr>
                   ) : (
                     transactions.map(tx => (
-                      <tr key={tx._id || tx.txHash}>
+                      <tr key={tx._id}>
                         <td className="mono">{formatAddress(tx.txHash)}</td>
                         <td className="mono">{formatAddress(tx.from)}</td>
                         <td className="mono">{formatAddress(tx.to)}</td>
@@ -326,7 +451,7 @@ function App() {
                 <div className="empty-state">No alerts. System is secure.</div>
               ) : (
                 alerts.map(alert => (
-                  <div key={alert._id || alert.sigHash} className="alert-item-full">
+                  <div key={alert._id} className="alert-item-full">
                     <div className="alert-header">
                       <AlertTriangle className="text-danger" size={20} />
                       <div>

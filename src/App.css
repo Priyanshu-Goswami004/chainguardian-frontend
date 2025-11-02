@@ -418,7 +418,36 @@ body {
   color: #6b7280;
   font-size: 0.875rem;
 }
+/* Chart improvements */
+.chart-info {
+  font-size: 0.85rem;
+  color: #999;
+  margin-left: auto;
+}
 
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #666;
+  text-align: center;
+}
+
+.empty-state p {
+  margin: 10px 0 0 0;
+}
+
+.empty-state .text-sm {
+  font-size: 0.85rem;
+  color: #888;
+}
+
+/* Better chart container */
+.recharts-wrapper {
+  margin: 0 auto;
+}
 /* Responsive */
 @media (max-width: 768px) {
   .header-content {
